@@ -16,6 +16,8 @@ export default function SettingsScreen({
   setEsp32Ip,
   modelUrl,
   setModelUrl,
+  modelMode,
+  setModelMode,
   autoSend,
   setAutoSend,
   pingESP32,
@@ -47,24 +49,55 @@ export default function SettingsScreen({
                 <Text style={styles.secondaryButtonText}>Probar IP</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={() => onSaveSettings(esp32Ip, autoSend)}
-            >
-              <Text style={styles.secondaryButtonText}>Guardar IP</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>URL del Modelo de IA:</Text>
-            <TextInput
-              value={modelUrl}
-              onChangeText={setModelUrl}
-              placeholder="https://tu-servidor-modelo.com/predict"
-              placeholderTextColor="#64748b"
-              style={styles.textInput}
-              autoCapitalize="none"
-            />
+            <Text style={styles.inputLabel}>Origen del modelo:</Text>
+            <View style={styles.modeSelector}>
+              {[
+                { value: 'remote', label: 'Remoto' },
+                { value: 'local', label: 'Local' },
+              ].map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: modelMode === option.value }}
+                  style={[
+                    styles.modeOption,
+                    modelMode === option.value && styles.modeOptionSelected,
+                  ]}
+                  onPress={() => setModelMode(option.value)}
+                >
+                  <Text
+                    style={[
+                      styles.modeOptionText,
+                      modelMode === option.value && styles.modeOptionTextSelected,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {modelMode === 'remote' ? (
+              <>
+                <Text style={styles.inputLabel}>URL base del modelo:</Text>
+                <TextInput
+                  value={modelUrl}
+                  onChangeText={setModelUrl}
+                  placeholder="https://teachablemachine.withgoogle.com/models/.../"
+                  placeholderTextColor="#64748b"
+                  style={styles.textInput}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                />
+              </>
+            ) : (
+              <Text style={styles.toggleSubtitle}>
+                Usa el modelo incluido en la aplicación y no requiere internet.
+              </Text>
+            )}
           </View>
 
           <View style={styles.toggleRow}>
@@ -81,6 +114,15 @@ export default function SettingsScreen({
               thumbColor="#ffffff"
             />
           </View>
+
+          <TouchableOpacity
+            style={styles.saveButton}
+            onPress={() =>
+              onSaveSettings(esp32Ip, autoSend, modelMode, modelUrl)
+            }
+          >
+            <Text style={styles.saveButtonText}>Guardar configuración</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -146,6 +188,43 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: '#f1f5f9',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  modeSelector: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  modeOption: {
+    flex: 1,
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#020617',
+  },
+  modeOptionSelected: {
+    backgroundColor: '#075985',
+  },
+  modeOptionText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modeOptionTextSelected: {
+    color: '#f0f9ff',
+  },
+  saveButton: {
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#0284c7',
+  },
+  saveButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
     fontWeight: '600',
   },
   toggleRow: {

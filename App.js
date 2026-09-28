@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Alert, ActivityIndicator, View, Text, StyleSheet } from "react-native";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Asset } from "expo-asset";
+import * as FileSystem from "expo-file-system/legacy";
 
 import * as tf from "@tensorflow/tfjs";
 import jpeg from "jpeg-js";
@@ -19,6 +21,8 @@ import HomeScreen from "./components/HomeScreen";
 import CameraScreen from "./components/CameraScreen";
 import SettingsScreen from "./components/SettingsScreen";
 import TestESP32Screen from "./components/TestESP32Screen";
+import localModelJson from "./assets/model/model.json";
+import localMetadata from "./assets/model/metadata.json";
 
 
 const Stack = createNativeStackNavigator();
@@ -31,14 +35,12 @@ const Stack = createNativeStackNavigator();
 const MODEL_BASE_URL =
   "https://teachablemachine.withgoogle.com/models/jFaZibuwF/";
 
-const MODEL_URL =
-  `${MODEL_BASE_URL}model.json`;
-
-const METADATA_URL =
-  `${MODEL_BASE_URL}metadata.json`;
+const LOCAL_MODEL_WEIGHTS =
+  require("./assets/model/model.weights.bin");
 
 const ESP32_IP_KEY = "ESP32_IP";
 const MODEL_URL_KEY = "MODEL_URL";
+const MODEL_MODE_KEY = "MODEL_MODE";
 const AUTO_SEND_KEY = "AUTO_SEND";
 
 
@@ -55,6 +57,8 @@ export default function App() {
   const [modelError, setModelError] = useState("");
 
   const [esp32Ip, setEsp32Ip] = useState("");
+  const [modelMode, setModelMode] = useState("remote");
+  const [modelUrl, setModelUrl] = useState(MODEL_BASE_URL);
 
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -90,13 +94,20 @@ export default function App() {
   // ======================================================
 
   useEffect(() => {
+    const initialize = async () => {
+      const configuration = await loadSettings();
+      await loadModel(configuration.mode, configuration.url);
+    };
 
-    loadSettings();
-
+    initialize();
   }, []);
 
 
   const loadSettings = async () => {
+    const configuration = {
+      mode: "remote",
+      url: MODEL_BASE_URL,
+    };
 
     try {
 
@@ -105,6 +116,9 @@ export default function App() {
 
       const savedModel =
         await AsyncStorage.getItem(MODEL_URL_KEY);
+
+      const savedModelMode =
+        await AsyncStorage.getItem(MODEL_MODE_KEY);
 
       const savedAutoSend =
         await AsyncStorage.getItem(AUTO_SEND_KEY);
@@ -118,13 +132,19 @@ export default function App() {
         setAutoSend(savedAutoSend === "true");
       }
 
+      configuration.mode = savedModelMode === "local" ? "local" : "remote";
+      configuration.url = savedModel || MODEL_BASE_URL;
+
+      setModelMode(configuration.mode);
+      setModelUrl(configuration.url);
+
 
       addLog(
         `IP ESP32: ${savedIp || "no configurada"}`
       );
 
       addLog(
-        `Modelo: ${savedModel || MODEL_URL}`
+        `Modelo ${configuration.mode}: ${configuration.url}`
       );
 
     } catch (error) {
@@ -136,6 +156,8 @@ export default function App() {
 
     }
 
+    return configuration;
+
   };
 
 
@@ -143,14 +165,10 @@ export default function App() {
   // CARGAR MODELO
   // ======================================================
 
-  useEffect(() => {
-
-    loadModel();
-
-  }, []);
-
-
-  const loadModel = async () => {
+  const loadModel = async (
+    selectedMode = modelMode,
+    selectedUrl = modelUrl
+  ) => {
 
     try {
 
@@ -194,14 +212,67 @@ export default function App() {
       );
 
 
-      addLog("Cargando model.json...");
+      let loadedModel;
+      let metadata;
 
-      const loadedModel =
-        await tf.loadLayersModel(
-          tf.io.http(MODEL_URL, {
+      if (selectedMode === "local") {
+        addLog("Cargando modelo local...");
+
+        const weightsAsset = Asset.fromModule(LOCAL_MODEL_WEIGHTS);
+        await weightsAsset.downloadAsync();
+
+        if (!weightsAsset.localUri) {
+          throw new Error("No se pudo localizar el archivo de pesos local.");
+        }
+
+        const encodedWeights = await FileSystem.readAsStringAsync(
+          weightsAsset.localUri,
+          { encoding: "base64" }
+        );
+        const weightBytes = toByteArray(encodedWeights);
+        const weightData = weightBytes.buffer.slice(
+          weightBytes.byteOffset,
+          weightBytes.byteOffset + weightBytes.byteLength
+        );
+
+        loadedModel = await tf.loadLayersModel(
+          tf.io.fromMemory({
+            modelTopology: localModelJson.modelTopology,
+            weightSpecs: localModelJson.weightsManifest.flatMap(
+              (group) => group.weights
+            ),
+            weightData,
+          })
+        );
+
+        metadata = localMetadata;
+      } else {
+        const baseUrl = selectedUrl.trim().replace(/\/+$/, "");
+        const modelJsonUrl = baseUrl.endsWith("/model.json")
+          ? baseUrl
+          : `${baseUrl}/model.json`;
+        const metadataUrl = baseUrl.endsWith("/model.json")
+          ? baseUrl.replace(/model\.json$/, "metadata.json")
+          : `${baseUrl}/metadata.json`;
+
+        addLog("Cargando modelo remoto...");
+
+        loadedModel = await tf.loadLayersModel(
+          tf.io.http(modelJsonUrl, {
             fetchFunc: fetchModelResource,
           })
         );
+
+        const metadataResponse = await fetch(metadataUrl);
+
+        if (!metadataResponse.ok) {
+          throw new Error(
+            `No se pudo cargar metadata.json (${metadataResponse.status})`
+          );
+        }
+
+        metadata = await metadataResponse.json();
+      }
 
 
       addLog("Modelo cargado correctamente.");
@@ -210,23 +281,6 @@ export default function App() {
       // --------------------------------------------------
       // METADATA
       // --------------------------------------------------
-
-      addLog("Cargando metadata.json...");
-
-      const metadataResponse =
-        await fetch(METADATA_URL);
-
-      if (!metadataResponse.ok) {
-
-        throw new Error(
-          `No se pudo cargar metadata.json (${metadataResponse.status})`
-        );
-
-      }
-
-      const metadata =
-        await metadataResponse.json();
-
 
       // Teachable Machine normalmente guarda:
       // metadata.labels
@@ -251,6 +305,7 @@ export default function App() {
 
       setModel(loadedModel);
       setLabels(loadedLabels);
+      setModelError("");
 
 
       addLog(
@@ -768,10 +823,16 @@ export default function App() {
 
   const saveSettings = async (
     newIp,
-    newAutoSend
+    newAutoSend,
+    newModelMode,
+    newModelUrl
   ) => {
 
     try {
+      if (newModelMode === "remote" && !newModelUrl.trim()) {
+        Alert.alert("Modelo remoto", "Ingresa la URL base del modelo.");
+        return;
+      }
 
       await AsyncStorage.setItem(
         ESP32_IP_KEY,
@@ -781,7 +842,12 @@ export default function App() {
 
       await AsyncStorage.setItem(
         MODEL_URL_KEY,
-        MODEL_BASE_URL
+        newModelUrl.trim()
+      );
+
+      await AsyncStorage.setItem(
+        MODEL_MODE_KEY,
+        newModelMode
       );
 
 
@@ -793,11 +859,15 @@ export default function App() {
 
       setEsp32Ip(newIp || "");
       setAutoSend(!!newAutoSend);
+      setModelMode(newModelMode);
+      setModelUrl(newModelUrl.trim());
 
 
       addLog(
         "Configuración guardada."
       );
+
+      await loadModel(newModelMode, newModelUrl.trim());
 
 
     } catch (error) {
@@ -825,7 +895,7 @@ export default function App() {
   // PANTALLA DE CARGA
   // ======================================================
 
-  if (modelLoading) {
+  if (modelLoading && !model) {
 
     return (
       <View style={styles.loadingContainer}>
@@ -888,7 +958,7 @@ export default function App() {
               }
 
               isProcessing={
-                isProcessing
+                isProcessing || modelLoading
               }
 
               detectedClass={
@@ -969,8 +1039,24 @@ export default function App() {
                 autoSend
               }
 
+              setAutoSend={
+                setAutoSend
+              }
+
               modelUrl={
-                MODEL_BASE_URL
+                modelUrl
+              }
+
+              setModelUrl={
+                setModelUrl
+              }
+
+              modelMode={
+                modelMode
+              }
+
+              setModelMode={
+                setModelMode
               }
 
               onSaveSettings={
