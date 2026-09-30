@@ -5,10 +5,10 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   Switch,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Wifi, Sliders } from 'lucide-react-native';
 
 export default function SettingsScreen({
@@ -20,6 +20,8 @@ export default function SettingsScreen({
   setModelMode,
   autoSend,
   setAutoSend,
+  logsEnabled,
+  setLogsEnabled,
   pingESP32,
   onSaveSettings,
 }) {
@@ -115,10 +117,26 @@ export default function SettingsScreen({
             />
           </View>
 
+          <View style={styles.toggleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleTitle}>Registro de logs</Text>
+              <Text style={styles.toggleSubtitle}>
+                Registrar eventos, tiempos y resultados de la aplicación
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="Activar registro de logs"
+              value={logsEnabled}
+              onValueChange={setLogsEnabled}
+              trackColor={{ false: '#334155', true: '#0284c7' }}
+              thumbColor="#ffffff"
+            />
+          </View>
+
           <TouchableOpacity
             style={styles.saveButton}
             onPress={() =>
-              onSaveSettings(esp32Ip, autoSend, modelMode, modelUrl)
+              onSaveSettings(esp32Ip, autoSend, modelMode, modelUrl, logsEnabled)
             }
           >
             <Text style={styles.saveButtonText}>Guardar configuración</Text>

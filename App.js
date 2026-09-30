@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Alert, ActivityIndicator, View, Text, StyleSheet } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import {
   NavigationContainer,
@@ -54,6 +55,8 @@ export default function App() {
   const [confidence, setConfidence] = useState(0);
 
   const [logs, setLogs] = useState([]);
+  const [logsEnabled, setLogsEnabled] = useState(true);
+  const logsEnabledRef = React.useRef(true);
 
   const [autoSend, setAutoSend] = useState(false);
 
@@ -63,6 +66,9 @@ export default function App() {
   // ======================================================
 
   const addLog = (message) => {
+    if (!logsEnabledRef.current) {
+      return;
+    }
 
     console.log(message);
 
@@ -93,6 +99,8 @@ export default function App() {
 
   const loadSettings = async () => {
     const configuration = await loadSettingsService();
+    logsEnabledRef.current = configuration.logsEnabled;
+    setLogsEnabled(configuration.logsEnabled);
     setEsp32Ip(configuration.ip);
     setAutoSend(configuration.autoSend);
     setModelMode(configuration.mode);
@@ -337,7 +345,8 @@ export default function App() {
     newIp,
     newAutoSend,
     newModelMode,
-    newModelUrl
+    newModelUrl,
+    newLogsEnabled
   ) => {
 
     try {
@@ -349,6 +358,7 @@ export default function App() {
       await saveSettingsService({
         ip: newIp,
         autoSend: newAutoSend,
+        logsEnabled: newLogsEnabled,
         mode: newModelMode,
         url: newModelUrl,
       });
@@ -356,6 +366,8 @@ export default function App() {
 
       setEsp32Ip(newIp || "");
       setAutoSend(!!newAutoSend);
+      logsEnabledRef.current = !!newLogsEnabled;
+      setLogsEnabled(!!newLogsEnabled);
       setModelMode(newModelMode);
       setModelUrl(newModelUrl.trim());
 
@@ -385,6 +397,11 @@ export default function App() {
 
   const clearLogs = () => {
     setLogs([]);
+  };
+
+  const updateLogsEnabled = (enabled) => {
+    logsEnabledRef.current = enabled;
+    setLogsEnabled(enabled);
   };
 
 
@@ -421,10 +438,18 @@ export default function App() {
 
   return (
 
+    <SafeAreaProvider>
     <NavigationContainer>
 
       <Stack.Navigator
         initialRouteName="Home"
+        screenOptions={{
+          headerStyle: { backgroundColor: "#0f172a" },
+          headerTintColor: "#f8fafc",
+          headerTitleStyle: { color: "#f8fafc" },
+          headerShadowVisible: false,
+          contentStyle: { backgroundColor: "#0f172a" },
+        }}
       >
 
         <Stack.Screen
@@ -540,6 +565,14 @@ export default function App() {
                 autoSend
               }
 
+              logsEnabled={
+                logsEnabled
+              }
+
+              setLogsEnabled={
+                updateLogsEnabled
+              }
+
               setAutoSend={
                 setAutoSend
               }
@@ -577,6 +610,7 @@ export default function App() {
       </Stack.Navigator>
 
     </NavigationContainer>
+    </SafeAreaProvider>
 
   );
 

@@ -4,9 +4,9 @@ import {
   Text,
   View,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   Camera as CameraIcon,
@@ -35,6 +35,8 @@ export default function CameraScreen({
   onSendToESP32,
 }) {
   const [isCameraActive, setIsCameraActive] = useState(true);
+  const [isCapturePreparing, setIsCapturePreparing] = useState(false);
+  const [captureStatus, setCaptureStatus] = useState('');
   const [showLogsModal, setShowLogsModal] = useState(false);
 
   // Referencia de la cámara
@@ -62,15 +64,18 @@ export default function CameraScreen({
    */
   const handleCapture = async () => {
     if (!cameraRef.current) {
-      console.log('La cámara todavía no está disponible');
+      onAddLog?.('La cámara todavía no está disponible');
       return;
     }
 
     if (!permission?.granted) {
-      console.log('No hay permisos para usar la cámara');
+      onAddLog?.('No hay permisos para usar la cámara');
       await requestPermission();
       return;
     }
+
+    setIsCapturePreparing(true);
+    setCaptureStatus('Capturando foto...');
 
     try {
       const captureStartedAt = Date.now();
@@ -81,8 +86,9 @@ export default function CameraScreen({
       });
 
       onAddLog?.(`Captura de foto: ${Date.now() - captureStartedAt} ms`);
-      console.log('Foto capturada correctamente');
+      onAddLog?.('Foto capturada correctamente');
 
+      setCaptureStatus('Optimizando imagen...');
       const resizeStartedAt = Date.now();
       const cropSize = Math.min(photo.width, photo.height);
       const resizedImage = await ImageManipulator.manipulate(photo.uri)
@@ -104,6 +110,7 @@ export default function CameraScreen({
         `Reducción nativa (${photo.width}x${photo.height} -> ${optimizedPhoto.width}x${optimizedPhoto.height}): ${Date.now() - resizeStartedAt} ms`
       );
 
+      setCaptureStatus('Analizando imagen...');
       /*
        * Aquí enviamos la foto al componente padre.
        *
@@ -121,6 +128,9 @@ export default function CameraScreen({
     } catch (error) {
       console.error('Error capturando la imagen:', error);
       onAddLog?.(`ERROR preparando la foto: ${error?.message || error}`);
+    } finally {
+      setIsCapturePreparing(false);
+      setCaptureStatus('');
     }
   };
 
@@ -130,6 +140,10 @@ export default function CameraScreen({
   const toggleCamera = () => {
     setIsCameraActive((current) => !current);
   };
+  const isBusy = isProcessing || isCapturePreparing;
+  const busyMessage = isProcessing
+    ? 'Procesando imagen con el modelo...'
+    : captureStatus;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -173,6 +187,8 @@ export default function CameraScreen({
                 ref={cameraRef}
                 style={StyleSheet.absoluteFillObject}
                 facing="back"
+                flash="off"
+                animateShutter={false}
               />
 
             ) : (
@@ -230,7 +246,7 @@ export default function CameraScreen({
           )}
 
           {/* Loading */}
-          {isProcessing && (
+          {isBusy && (
             <View style={styles.overlayLoading}>
               <ActivityIndicator
                 size="large"
@@ -238,7 +254,7 @@ export default function CameraScreen({
               />
 
               <Text style={styles.loadingText}>
-                Procesando imagen con el modelo...
+                {busyMessage}
               </Text>
             </View>
           )}
@@ -306,23 +322,25 @@ export default function CameraScreen({
               styles.primaryButton,
               (!isCameraActive ||
                 !permission?.granted ||
-                isProcessing) &&
+                isBusy) &&
                 styles.buttonDisabled,
             ]}
             onPress={handleCapture}
+            activeOpacity={1}
             disabled={
               !isCameraActive ||
               !permission?.granted ||
-              isProcessing
+              isBusy
             }
           >
-            <CameraIcon
-              color="#ffffff"
-              size={20}
-            />
+            {isBusy ? (
+              <ActivityIndicator color="#ffffff" size="small" />
+            ) : (
+              <CameraIcon color="#ffffff" size={20} />
+            )}
 
             <Text style={styles.primaryButtonText}>
-              Capturar y Enviar a Modelo
+              {isBusy ? busyMessage : 'Capturar y Enviar a Modelo'}
             </Text>
           </TouchableOpacity>
 
@@ -330,11 +348,11 @@ export default function CameraScreen({
           <TouchableOpacity
             style={[
               styles.emeraldButton,
-              (isProcessing || !detectedClass) &&
+              (isBusy || !detectedClass) &&
                 styles.buttonDisabled,
             ]}
             onPress={onSendToESP32}
-            disabled={isProcessing || !detectedClass}
+            disabled={isBusy || !detectedClass}
           >
             <Send
               color="#ffffff"
