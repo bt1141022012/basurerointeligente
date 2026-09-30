@@ -1,7 +1,8 @@
 import { Asset } from "expo-asset";
 import * as FileSystem from "expo-file-system/legacy";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as tf from "@tensorflow/tfjs";
-import "@tensorflow/tfjs-react-native";
+import { asyncStorageIO } from "@tensorflow/tfjs-react-native";
 import jpeg from "jpeg-js";
 import { toByteArray } from "base64-js";
 
@@ -9,12 +10,14 @@ import localModelJson from "../assets/model/model.json";
 import localMetadata from "../assets/model/metadata.json";
 
 const LOCAL_MODEL_WEIGHTS = require("../assets/model/model.weights.bin");
+const OFFLINE_MODEL_PATH = "basurero-inteligente-offline";
+const OFFLINE_MODEL_INFO_KEY = "BASURERO_OFFLINE_MODEL_INFO";
 
 function configureTensorFlow() {
   return tf;
 }
 
-export async function loadModel(selectedMode, selectedUrl, addLog) {
+async function initializeTensorFlow(addLog) {
   const tensorflow = configureTensorFlow();
 
   addLog("Iniciando TensorFlow.js...");
@@ -27,6 +30,11 @@ export async function loadModel(selectedMode, selectedUrl, addLog) {
   }
   await tensorflow.ready();
   addLog(`Backend TensorFlow: ${tensorflow.getBackend()}`);
+  return tensorflow;
+}
+
+export async function loadModel(selectedMode, selectedUrl, addLog) {
+  const tensorflow = await initializeTensorFlow(addLog);
 
   let loadedModel;
   let metadata;
@@ -100,6 +108,51 @@ export async function loadModel(selectedMode, selectedUrl, addLog) {
   }
 
   return { model: loadedModel, labels };
+}
+
+export async function downloadModel(selectedUrl, addLog) {
+  const loaded = await loadModel("remote", selectedUrl, addLog);
+  addLog("Guardando modelo para uso sin conexión...");
+  await loaded.model.save(asyncStorageIO(OFFLINE_MODEL_PATH));
+
+  const modelInfo = {
+    labels: loaded.labels,
+    sourceUrl: selectedUrl.trim(),
+    savedAt: new Date().toISOString(),
+  };
+  await AsyncStorage.setItem(OFFLINE_MODEL_INFO_KEY, JSON.stringify(modelInfo));
+  addLog("Modelo guardado en el dispositivo.");
+
+  return { ...loaded, modelInfo };
+}
+
+export async function getDownloadedModelInfo() {
+  try {
+    const savedInfo = await AsyncStorage.getItem(OFFLINE_MODEL_INFO_KEY);
+    return savedInfo ? JSON.parse(savedInfo) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+export async function loadDownloadedModel(addLog) {
+  const tensorflow = await initializeTensorFlow(addLog);
+  const modelInfo = await getDownloadedModelInfo();
+  if (!modelInfo?.labels?.length) {
+    throw new Error("No hay un modelo descargado en este dispositivo.");
+  }
+
+  addLog("Cargando modelo guardado en el dispositivo...");
+  const loadedModel = await tensorflow.loadLayersModel(
+    asyncStorageIO(OFFLINE_MODEL_PATH)
+  );
+
+  if (loadedModel.inputs?.[0]?.shape) {
+    addLog(`Entrada del modelo: ${JSON.stringify(loadedModel.inputs[0].shape)}`);
+  }
+  addLog("Modelo sin conexión cargado correctamente.");
+
+  return { model: loadedModel, labels: modelInfo.labels, modelInfo };
 }
 
 function imageToTensor(base64, addLog) {

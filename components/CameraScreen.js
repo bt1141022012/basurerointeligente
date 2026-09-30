@@ -26,6 +26,7 @@ import LogsModal from '../components/LogsModal';
 export default function CameraScreen({
   esp32Status,
   isProcessing,
+  modelReady,
   detectedClass,
   confidence,
   logs,
@@ -322,6 +323,7 @@ export default function CameraScreen({
               styles.primaryButton,
               (!isCameraActive ||
                 !permission?.granted ||
+                !modelReady ||
                 isBusy) &&
                 styles.buttonDisabled,
             ]}
@@ -330,6 +332,7 @@ export default function CameraScreen({
             disabled={
               !isCameraActive ||
               !permission?.granted ||
+              !modelReady ||
               isBusy
             }
           >
@@ -340,7 +343,11 @@ export default function CameraScreen({
             )}
 
             <Text style={styles.primaryButtonText}>
-              {isBusy ? busyMessage : 'Capturar y Enviar a Modelo'}
+              {isBusy
+                ? busyMessage
+                : modelReady
+                ? 'Capturar y Enviar a Modelo'
+                : 'Carga el modelo desde Configuración'}
             </Text>
           </TouchableOpacity>
 
