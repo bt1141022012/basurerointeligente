@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Alert, ActivityIndicator, View, Text, StyleSheet } from "react-native";
+import { Alert, View, Text, StyleSheet } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import {
   NavigationContainer,
@@ -17,10 +18,17 @@ import {
   checkESP32,
   sendToESP32 as sendESP32Request,
 } from "./services/esp32Service";
-import { loadModel as loadModelService, predictImage } from "./services/modelService";
+import {
+  downloadModel as downloadModelService,
+  getDownloadedModelInfo,
+  loadDownloadedModel,
+  loadModel as loadModelService,
+  predictImage,
+} from "./services/modelService";
 import {
   DEFAULT_MODEL_URL,
   loadSettings as loadSettingsService,
+  saveAutoSendSetting,
   saveSettings as saveSettingsService,
 } from "./services/settingsService";
 
@@ -41,8 +49,9 @@ export default function App() {
   const [model, setModel] = useState(null);
   const [labels, setLabels] = useState([]);
 
-  const [modelLoading, setModelLoading] = useState(true);
+  const [modelLoading, setModelLoading] = useState(false);
   const [modelError, setModelError] = useState("");
+  const [downloadedModelInfo, setDownloadedModelInfo] = useState(null);
 
   const [esp32Ip, setEsp32Ip] = useState("");
   const [modelMode, setModelMode] = useState("remote");
@@ -54,6 +63,8 @@ export default function App() {
   const [confidence, setConfidence] = useState(0);
 
   const [logs, setLogs] = useState([]);
+  const [logsEnabled, setLogsEnabled] = useState(true);
+  const logsEnabledRef = React.useRef(true);
 
   const [autoSend, setAutoSend] = useState(false);
 
@@ -63,6 +74,9 @@ export default function App() {
   // ======================================================
 
   const addLog = (message) => {
+    if (!logsEnabledRef.current) {
+      return;
+    }
 
     console.log(message);
 
@@ -83,8 +97,8 @@ export default function App() {
 
   useEffect(() => {
     const initialize = async () => {
-      const configuration = await loadSettings();
-      await loadModel(configuration.mode, configuration.url);
+      await loadSettings();
+      setDownloadedModelInfo(await getDownloadedModelInfo());
     };
 
     initialize();
@@ -93,6 +107,8 @@ export default function App() {
 
   const loadSettings = async () => {
     const configuration = await loadSettingsService();
+    logsEnabledRef.current = configuration.logsEnabled;
+    setLogsEnabled(configuration.logsEnabled);
     setEsp32Ip(configuration.ip);
     setAutoSend(configuration.autoSend);
     setModelMode(configuration.mode);
@@ -107,18 +123,18 @@ export default function App() {
   // CARGAR MODELO
   // ======================================================
 
-  const loadModel = async (
-    selectedMode = modelMode,
-    selectedUrl = modelUrl
-  ) => {
-
+  const runModelAction = async (loadOperation) => {
     setModelLoading(true);
     setModelError("");
     try {
-      const loaded = await loadModelService(selectedMode, selectedUrl, addLog);
+      const loaded = await loadOperation();
       setModel(loaded.model);
       setLabels(loaded.labels);
+      if (loaded.modelInfo) {
+        setDownloadedModelInfo(loaded.modelInfo);
+      }
       setModelError("");
+      return true;
     } catch (error) {
       console.error(
         "Error cargando modelo:",
@@ -129,10 +145,26 @@ export default function App() {
         error?.message || "No se pudo cargar el modelo."
       );
       addLog(`ERROR: ${error?.message || "No se pudo cargar el modelo."}`);
+      Alert.alert(
+        "Modelo",
+        error?.message || "No se pudo cargar el modelo."
+      );
+      return false;
     } finally {
       setModelLoading(false);
     }
   };
+
+  const downloadConfiguredModel = () => {
+    if (modelMode === "local") {
+      return runModelAction(() => loadModelService("local", modelUrl, addLog));
+    }
+
+    return runModelAction(() => downloadModelService(modelUrl, addLog));
+  };
+
+  const loadSavedModel = () =>
+    runModelAction(() => loadDownloadedModel(addLog));
 
 
   // ======================================================
@@ -276,10 +308,10 @@ export default function App() {
         addLog(`ESP32 respondió: ${response.text}`);
 
 
-        Alert.alert(
+       /* Alert.alert(
           "ESP32",
           "Datos enviados correctamente."
-        );
+        );*/
 
 
       } catch (error) {
@@ -299,11 +331,11 @@ export default function App() {
         );
 
 
-        Alert.alert(
+       /* Alert.alert(
           "Error ESP32",
           error?.message ||
           "No se pudo conectar con el ESP32."
-        );
+        );*/
 
       }
 
@@ -337,7 +369,8 @@ export default function App() {
     newIp,
     newAutoSend,
     newModelMode,
-    newModelUrl
+    newModelUrl,
+    newLogsEnabled
   ) => {
 
     try {
@@ -346,9 +379,13 @@ export default function App() {
         return;
       }
 
+      const modelConfigurationChanged =
+        newModelMode !== modelMode || newModelUrl.trim() !== modelUrl.trim();
+
       await saveSettingsService({
         ip: newIp,
         autoSend: newAutoSend,
+        logsEnabled: newLogsEnabled,
         mode: newModelMode,
         url: newModelUrl,
       });
@@ -356,15 +393,20 @@ export default function App() {
 
       setEsp32Ip(newIp || "");
       setAutoSend(!!newAutoSend);
+      logsEnabledRef.current = !!newLogsEnabled;
+      setLogsEnabled(!!newLogsEnabled);
       setModelMode(newModelMode);
       setModelUrl(newModelUrl.trim());
+      if (modelConfigurationChanged) {
+        setModel(null);
+        setLabels([]);
+        setModelError("");
+      }
 
 
       addLog(
         "Configuración guardada."
       );
-
-      await loadModel(newModelMode, newModelUrl.trim());
 
 
     } catch (error) {
@@ -387,32 +429,17 @@ export default function App() {
     setLogs([]);
   };
 
+  const updateLogsEnabled = (enabled) => {
+    logsEnabledRef.current = enabled;
+    setLogsEnabled(enabled);
+  };
 
-  // ======================================================
-  // PANTALLA DE CARGA
-  // ======================================================
-
-  if (modelLoading && !model) {
-
-    return (
-      <View style={styles.loadingContainer}>
-
-        <ActivityIndicator
-          size="large"
-        />
-
-        <Text style={styles.loadingText}>
-          Cargando modelo...
-        </Text>
-
-        <Text style={styles.loadingSubtext}>
-          Teachable Machine
-        </Text>
-
-      </View>
-    );
-
-  }
+  const updateAutoSend = (enabled) => {
+    setAutoSend(enabled);
+    saveAutoSendSetting(enabled).catch((error) => {
+      console.error("Error guardando envío automático:", error);
+    });
+  };
 
 
   // ======================================================
@@ -421,10 +448,18 @@ export default function App() {
 
   return (
 
+    <SafeAreaProvider>
     <NavigationContainer>
 
       <Stack.Navigator
         initialRouteName="Home"
+        screenOptions={{
+          headerStyle: { backgroundColor: "#0f172a" },
+          headerTintColor: "#f8fafc",
+          headerTitleStyle: { color: "#f8fafc" },
+          headerShadowVisible: false,
+          contentStyle: { backgroundColor: "#0f172a" },
+        }}
       >
 
         <Stack.Screen
@@ -457,6 +492,10 @@ export default function App() {
               isProcessing={
                 isProcessing || modelLoading
               }
+
+              autoSend={autoSend}
+
+              modelReady={Boolean(model)}
 
               detectedClass={
                 detectedClass
@@ -540,8 +579,40 @@ export default function App() {
                 autoSend
               }
 
+              logsEnabled={
+                logsEnabled
+              }
+
+              downloadedModelInfo={
+                downloadedModelInfo
+              }
+
+              isModelLoading={
+                modelLoading
+              }
+
+              modelReady={
+                Boolean(model)
+              }
+
+              modelError={
+                modelError
+              }
+
+              onDownloadModel={
+                downloadConfiguredModel
+              }
+
+              onLoadDownloadedModel={
+                loadSavedModel
+              }
+
+              setLogsEnabled={
+                updateLogsEnabled
+              }
+
               setAutoSend={
-                setAutoSend
+                updateAutoSend
               }
 
               modelUrl={
@@ -577,6 +648,7 @@ export default function App() {
       </Stack.Navigator>
 
     </NavigationContainer>
+    </SafeAreaProvider>
 
   );
 

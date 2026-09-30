@@ -5,11 +5,12 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
-import { Wifi, Sliders } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Wifi, Sliders, Download, HardDrive, CheckCircle2 } from 'lucide-react-native';
 
 export default function SettingsScreen({
   esp32Ip,
@@ -20,6 +21,14 @@ export default function SettingsScreen({
   setModelMode,
   autoSend,
   setAutoSend,
+  logsEnabled,
+  setLogsEnabled,
+  downloadedModelInfo,
+  isModelLoading,
+  modelReady,
+  modelError,
+  onDownloadModel,
+  onLoadDownloadedModel,
   pingESP32,
   onSaveSettings,
 }) {
@@ -115,10 +124,108 @@ export default function SettingsScreen({
             />
           </View>
 
+          <View style={styles.toggleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleTitle}>Registro de logs</Text>
+              <Text style={styles.toggleSubtitle}>
+                Registrar eventos, tiempos y resultados de la aplicación
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="Activar registro de logs"
+              value={logsEnabled}
+              onValueChange={setLogsEnabled}
+              trackColor={{ false: '#334155', true: '#0284c7' }}
+              thumbColor="#ffffff"
+            />
+          </View>
+
+          <View style={styles.modelSection}>
+            <View style={styles.cardHeader}>
+              <HardDrive color="#38bdf8" size={20} />
+              <Text style={styles.toggleTitle}>Modelo de IA</Text>
+            </View>
+            <Text style={styles.toggleSubtitle}>
+              {modelReady
+                ? 'Modelo cargado y listo para esta sesión.'
+                : downloadedModelInfo
+                ? 'Hay una copia guardada en el dispositivo para usar sin internet.'
+                : modelMode === 'local'
+                ? 'El modelo está incluido en la aplicación; cárgalo cuando lo necesites.'
+                : 'El modelo no está descargado. Necesitarás internet para descargarlo.'}
+            </Text>
+
+            {downloadedModelInfo?.sourceUrl ? (
+              <Text style={styles.modelSource} numberOfLines={2}>
+                Descargado desde: {downloadedModelInfo.sourceUrl}
+              </Text>
+            ) : null}
+
+            {modelMode === 'remote' && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                disabled={isModelLoading}
+                style={[styles.modelButton, isModelLoading && styles.buttonDisabled]}
+                onPress={onDownloadModel}
+              >
+                {isModelLoading ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Download color="#ffffff" size={18} />
+                )}
+                <Text style={styles.saveButtonText}>
+                  {isModelLoading
+                    ? 'Descargando y guardando...'
+                    : downloadedModelInfo
+                    ? 'Descargar / actualizar modelo'
+                    : 'Descargar para usar sin internet'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {modelMode === 'local' && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                disabled={isModelLoading}
+                style={[styles.modelButton, isModelLoading && styles.buttonDisabled]}
+                onPress={onDownloadModel}
+              >
+                {isModelLoading ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <CheckCircle2 color="#ffffff" size={18} />
+                )}
+                <Text style={styles.saveButtonText}>
+                  {isModelLoading ? 'Cargando modelo...' : 'Cargar modelo local'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {downloadedModelInfo && !modelReady && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                disabled={isModelLoading}
+                style={[styles.offlineButton, isModelLoading && styles.buttonDisabled]}
+                onPress={onLoadDownloadedModel}
+              >
+                {isModelLoading ? (
+                  <ActivityIndicator color="#d1fae5" size="small" />
+                ) : (
+                  <HardDrive color="#d1fae5" size={18} />
+                )}
+                <Text style={styles.offlineButtonText}>
+                  {isModelLoading ? 'Cargando desde el dispositivo...' : 'Cargar modelo sin conexión'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {modelError ? <Text style={styles.modelError}>{modelError}</Text> : null}
+          </View>
+
           <TouchableOpacity
             style={styles.saveButton}
             onPress={() =>
-              onSaveSettings(esp32Ip, autoSend, modelMode, modelUrl)
+              onSaveSettings(esp32Ip, autoSend, modelMode, modelUrl, logsEnabled)
             }
           >
             <Text style={styles.saveButtonText}>Guardar configuración</Text>
@@ -244,5 +351,49 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#94a3b8',
     marginTop: 2,
+  },
+  modelSection: {
+    gap: 10,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(51, 65, 85, 0.7)',
+  },
+  modelSource: {
+    color: '#64748b',
+    fontSize: 10,
+  },
+  modelButton: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 8,
+    backgroundColor: '#0284c7',
+    paddingHorizontal: 10,
+  },
+  offlineButton: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#059669',
+    backgroundColor: '#064e3b',
+    paddingHorizontal: 10,
+  },
+  offlineButtonText: {
+    color: '#d1fae5',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  modelError: {
+    color: '#fda4af',
+    fontSize: 12,
+  },
+  buttonDisabled: {
+    opacity: 0.55,
   },
 });

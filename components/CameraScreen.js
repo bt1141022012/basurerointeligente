@@ -4,9 +4,9 @@ import {
   Text,
   View,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   Camera as CameraIcon,
@@ -20,12 +20,15 @@ import {
   useCameraPermissions,
 } from 'expo-camera';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { useIsFocused } from '@react-navigation/native';
 
 import LogsModal from '../components/LogsModal';
 
 export default function CameraScreen({
   esp32Status,
   isProcessing,
+  autoSend,
+  modelReady,
   detectedClass,
   confidence,
   logs,
@@ -34,7 +37,10 @@ export default function CameraScreen({
   onCaptureAndSend,
   onSendToESP32,
 }) {
+  const isFocused = useIsFocused();
   const [isCameraActive, setIsCameraActive] = useState(true);
+  const [isCapturePreparing, setIsCapturePreparing] = useState(false);
+  const [captureStatus, setCaptureStatus] = useState('');
   const [showLogsModal, setShowLogsModal] = useState(false);
 
   // Referencia de la cámara
@@ -62,15 +68,18 @@ export default function CameraScreen({
    */
   const handleCapture = async () => {
     if (!cameraRef.current) {
-      console.log('La cámara todavía no está disponible');
+      onAddLog?.('La cámara todavía no está disponible');
       return;
     }
 
     if (!permission?.granted) {
-      console.log('No hay permisos para usar la cámara');
+      onAddLog?.('No hay permisos para usar la cámara');
       await requestPermission();
       return;
     }
+
+    setIsCapturePreparing(true);
+    setCaptureStatus('Capturando foto...');
 
     try {
       const captureStartedAt = Date.now();
@@ -81,8 +90,9 @@ export default function CameraScreen({
       });
 
       onAddLog?.(`Captura de foto: ${Date.now() - captureStartedAt} ms`);
-      console.log('Foto capturada correctamente');
+      onAddLog?.('Foto capturada correctamente');
 
+      setCaptureStatus('Optimizando imagen...');
       const resizeStartedAt = Date.now();
       const cropSize = Math.min(photo.width, photo.height);
       const resizedImage = await ImageManipulator.manipulate(photo.uri)
@@ -104,6 +114,7 @@ export default function CameraScreen({
         `Reducción nativa (${photo.width}x${photo.height} -> ${optimizedPhoto.width}x${optimizedPhoto.height}): ${Date.now() - resizeStartedAt} ms`
       );
 
+      setCaptureStatus('Analizando imagen...');
       /*
        * Aquí enviamos la foto al componente padre.
        *
@@ -121,6 +132,9 @@ export default function CameraScreen({
     } catch (error) {
       console.error('Error capturando la imagen:', error);
       onAddLog?.(`ERROR preparando la foto: ${error?.message || error}`);
+    } finally {
+      setIsCapturePreparing(false);
+      setCaptureStatus('');
     }
   };
 
@@ -130,6 +144,10 @@ export default function CameraScreen({
   const toggleCamera = () => {
     setIsCameraActive((current) => !current);
   };
+  const isBusy = isProcessing || isCapturePreparing;
+  const busyMessage = isProcessing
+    ? 'Procesando imagen con el modelo...'
+    : captureStatus;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -173,6 +191,8 @@ export default function CameraScreen({
                 ref={cameraRef}
                 style={StyleSheet.absoluteFillObject}
                 facing="back"
+                flash="off"
+                animateShutter={false}
               />
 
             ) : (
@@ -230,7 +250,7 @@ export default function CameraScreen({
           )}
 
           {/* Loading */}
-          {isProcessing && (
+          {isBusy && (
             <View style={styles.overlayLoading}>
               <ActivityIndicator
                 size="large"
@@ -238,7 +258,7 @@ export default function CameraScreen({
               />
 
               <Text style={styles.loadingText}>
-                Procesando imagen con el modelo...
+                {busyMessage}
               </Text>
             </View>
           )}
@@ -289,7 +309,9 @@ export default function CameraScreen({
             </Text>
 
             <Text style={styles.confidenceValue}>
-              {confidence || '0%'}
+              {Number.isFinite(Number(confidence))
+                ? `${Number(confidence).toFixed(4)}%`
+                : '0.0000%'}
             </Text>
           </View>
 
@@ -306,45 +328,56 @@ export default function CameraScreen({
               styles.primaryButton,
               (!isCameraActive ||
                 !permission?.granted ||
-                isProcessing) &&
+                !modelReady ||
+                isBusy) &&
                 styles.buttonDisabled,
             ]}
             onPress={handleCapture}
+            activeOpacity={1}
             disabled={
               !isCameraActive ||
               !permission?.granted ||
-              isProcessing
+              !modelReady ||
+              isBusy
             }
           >
-            <CameraIcon
-              color="#ffffff"
-              size={20}
-            />
+            {isBusy ? (
+              <ActivityIndicator color="#ffffff" size="small" />
+            ) : (
+              <CameraIcon color="#ffffff" size={20} />
+            )}
 
             <Text style={styles.primaryButtonText}>
-              Capturar y Enviar a Modelo
+              {isBusy
+                ? busyMessage
+                : modelReady
+                ? autoSend
+                ? 'Capturar y enviar al ESP32'
+                : 'Capturar y procesar con el modelo'
+                : 'Carga el modelo desde Configuración'}
             </Text>
           </TouchableOpacity>
 
-          {/* ESP32 */}
-          <TouchableOpacity
-            style={[
-              styles.emeraldButton,
-              (isProcessing || !detectedClass) &&
-                styles.buttonDisabled,
-            ]}
-            onPress={onSendToESP32}
-            disabled={isProcessing || !detectedClass}
-          >
-            <Send
-              color="#ffffff"
-              size={18}
-            />
+          {!autoSend && isFocused && (
+            <TouchableOpacity
+              style={[
+                styles.emeraldButton,
+                (isBusy || !detectedClass) &&
+                  styles.buttonDisabled,
+              ]}
+              onPress={onSendToESP32}
+              disabled={isBusy || !detectedClass}
+            >
+              <Send
+                color="#ffffff"
+                size={18}
+              />
 
-            <Text style={styles.primaryButtonText}>
-              Enviar Resultado al ESP32
-            </Text>
-          </TouchableOpacity>
+              <Text style={styles.primaryButtonText}>
+                Enviar Resultado al ESP32
+              </Text>
+            </TouchableOpacity>
+          )}
 
         </View>
 
@@ -581,7 +614,7 @@ const styles = StyleSheet.create({
   },
 
   confidenceValue: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#e2e8f0',
   },
@@ -593,7 +626,8 @@ const styles = StyleSheet.create({
 
   primaryButton: {
     backgroundColor: '#0284c7',
-    paddingVertical: 12,
+    minHeight: 60,
+    paddingHorizontal: 16,
     borderRadius: 12,
     flexDirection: 'row',
     justifyContent: 'center',
@@ -618,7 +652,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: '#ffffff',
     fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 16,
   },
 
   logsToggleButton: {
