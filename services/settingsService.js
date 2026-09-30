@@ -49,3 +49,7 @@ export async function saveSettings({ ip, autoSend, logsEnabled = true, mode, url
     AsyncStorage.setItem(LOGS_ENABLED_KEY, String(!!logsEnabled)),
   ]);
 }
+
+export async function saveAutoSendSetting(autoSend) {
+  await AsyncStorage.setItem(AUTO_SEND_KEY, String(!!autoSend));
+}

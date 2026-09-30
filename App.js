@@ -28,6 +28,7 @@ import {
 import {
   DEFAULT_MODEL_URL,
   loadSettings as loadSettingsService,
+  saveAutoSendSetting,
   saveSettings as saveSettingsService,
 } from "./services/settingsService";
 
@@ -307,10 +308,10 @@ export default function App() {
         addLog(`ESP32 respondió: ${response.text}`);
 
 
-        Alert.alert(
+       /* Alert.alert(
           "ESP32",
           "Datos enviados correctamente."
-        );
+        );*/
 
 
       } catch (error) {
@@ -330,11 +331,11 @@ export default function App() {
         );
 
 
-        Alert.alert(
+       /* Alert.alert(
           "Error ESP32",
           error?.message ||
           "No se pudo conectar con el ESP32."
-        );
+        );*/
 
       }
 
@@ -433,6 +434,13 @@ export default function App() {
     setLogsEnabled(enabled);
   };
 
+  const updateAutoSend = (enabled) => {
+    setAutoSend(enabled);
+    saveAutoSendSetting(enabled).catch((error) => {
+      console.error("Error guardando envío automático:", error);
+    });
+  };
+
 
   // ======================================================
   // NAVEGACIÓN
@@ -484,6 +492,8 @@ export default function App() {
               isProcessing={
                 isProcessing || modelLoading
               }
+
+              autoSend={autoSend}
 
               modelReady={Boolean(model)}
 
@@ -602,7 +612,7 @@ export default function App() {
               }
 
               setAutoSend={
-                setAutoSend
+                updateAutoSend
               }
 
               modelUrl={

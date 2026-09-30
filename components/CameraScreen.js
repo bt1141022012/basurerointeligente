@@ -20,12 +20,14 @@ import {
   useCameraPermissions,
 } from 'expo-camera';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { useIsFocused } from '@react-navigation/native';
 
 import LogsModal from '../components/LogsModal';
 
 export default function CameraScreen({
   esp32Status,
   isProcessing,
+  autoSend,
   modelReady,
   detectedClass,
   confidence,
@@ -35,6 +37,7 @@ export default function CameraScreen({
   onCaptureAndSend,
   onSendToESP32,
 }) {
+  const isFocused = useIsFocused();
   const [isCameraActive, setIsCameraActive] = useState(true);
   const [isCapturePreparing, setIsCapturePreparing] = useState(false);
   const [captureStatus, setCaptureStatus] = useState('');
@@ -306,7 +309,9 @@ export default function CameraScreen({
             </Text>
 
             <Text style={styles.confidenceValue}>
-              {confidence || '0%'}
+              {Number.isFinite(Number(confidence))
+                ? `${Number(confidence).toFixed(4)}%`
+                : '0.0000%'}
             </Text>
           </View>
 
@@ -346,30 +351,33 @@ export default function CameraScreen({
               {isBusy
                 ? busyMessage
                 : modelReady
-                ? 'Capturar y Enviar a Modelo'
+                ? autoSend
+                ? 'Capturar y enviar al ESP32'
+                : 'Capturar y procesar con el modelo'
                 : 'Carga el modelo desde Configuración'}
             </Text>
           </TouchableOpacity>
 
-          {/* ESP32 */}
-          <TouchableOpacity
-            style={[
-              styles.emeraldButton,
-              (isBusy || !detectedClass) &&
-                styles.buttonDisabled,
-            ]}
-            onPress={onSendToESP32}
-            disabled={isBusy || !detectedClass}
-          >
-            <Send
-              color="#ffffff"
-              size={18}
-            />
+          {!autoSend && isFocused && (
+            <TouchableOpacity
+              style={[
+                styles.emeraldButton,
+                (isBusy || !detectedClass) &&
+                  styles.buttonDisabled,
+              ]}
+              onPress={onSendToESP32}
+              disabled={isBusy || !detectedClass}
+            >
+              <Send
+                color="#ffffff"
+                size={18}
+              />
 
-            <Text style={styles.primaryButtonText}>
-              Enviar Resultado al ESP32
-            </Text>
-          </TouchableOpacity>
+              <Text style={styles.primaryButtonText}>
+                Enviar Resultado al ESP32
+              </Text>
+            </TouchableOpacity>
+          )}
 
         </View>
 
@@ -606,7 +614,7 @@ const styles = StyleSheet.create({
   },
 
   confidenceValue: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#e2e8f0',
   },
@@ -618,7 +626,8 @@ const styles = StyleSheet.create({
 
   primaryButton: {
     backgroundColor: '#0284c7',
-    paddingVertical: 12,
+    minHeight: 60,
+    paddingHorizontal: 16,
     borderRadius: 12,
     flexDirection: 'row',
     justifyContent: 'center',
@@ -643,7 +652,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: '#ffffff',
     fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 16,
   },
 
   logsToggleButton: {
