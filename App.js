@@ -1,14 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Alert, ActivityIndicator, View, Text, StyleSheet } from "react-native";
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Asset } from "expo-asset";
-import * as FileSystem from "expo-file-system/legacy";
-
-import * as tf from "@tensorflow/tfjs";
-import jpeg from "jpeg-js";
-import { toByteArray } from "base64-js";
-
 import {
   NavigationContainer,
 } from "@react-navigation/native";
@@ -21,8 +13,16 @@ import HomeScreen from "./components/HomeScreen";
 import CameraScreen from "./components/CameraScreen";
 import SettingsScreen from "./components/SettingsScreen";
 import TestESP32Screen from "./components/TestESP32Screen";
-import localModelJson from "./assets/model/model.json";
-import localMetadata from "./assets/model/metadata.json";
+import {
+  checkESP32,
+  sendToESP32 as sendESP32Request,
+} from "./services/esp32Service";
+import { loadModel as loadModelService, predictImage } from "./services/modelService";
+import {
+  DEFAULT_MODEL_URL,
+  loadSettings as loadSettingsService,
+  saveSettings as saveSettingsService,
+} from "./services/settingsService";
 
 
 const Stack = createNativeStackNavigator();
@@ -31,18 +31,6 @@ const Stack = createNativeStackNavigator();
 // ======================================================
 // CONFIGURACIÓN
 // ======================================================
-
-const MODEL_BASE_URL =
-  "https://teachablemachine.withgoogle.com/models/jFaZibuwF/";
-
-const LOCAL_MODEL_WEIGHTS =
-  require("./assets/model/model.weights.bin");
-
-const ESP32_IP_KEY = "ESP32_IP";
-const MODEL_URL_KEY = "MODEL_URL";
-const MODEL_MODE_KEY = "MODEL_MODE";
-const AUTO_SEND_KEY = "AUTO_SEND";
-
 
 // ======================================================
 // APP
@@ -58,7 +46,7 @@ export default function App() {
 
   const [esp32Ip, setEsp32Ip] = useState("");
   const [modelMode, setModelMode] = useState("remote");
-  const [modelUrl, setModelUrl] = useState(MODEL_BASE_URL);
+  const [modelUrl, setModelUrl] = useState(DEFAULT_MODEL_URL);
 
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -104,60 +92,14 @@ export default function App() {
 
 
   const loadSettings = async () => {
-    const configuration = {
-      mode: "remote",
-      url: MODEL_BASE_URL,
-    };
-
-    try {
-
-      const savedIp =
-        await AsyncStorage.getItem(ESP32_IP_KEY);
-
-      const savedModel =
-        await AsyncStorage.getItem(MODEL_URL_KEY);
-
-      const savedModelMode =
-        await AsyncStorage.getItem(MODEL_MODE_KEY);
-
-      const savedAutoSend =
-        await AsyncStorage.getItem(AUTO_SEND_KEY);
-
-
-      if (savedIp) {
-        setEsp32Ip(savedIp);
-      }
-
-      if (savedAutoSend !== null) {
-        setAutoSend(savedAutoSend === "true");
-      }
-
-      configuration.mode = savedModelMode === "local" ? "local" : "remote";
-      configuration.url = savedModel || MODEL_BASE_URL;
-
-      setModelMode(configuration.mode);
-      setModelUrl(configuration.url);
-
-
-      addLog(
-        `IP ESP32: ${savedIp || "no configurada"}`
-      );
-
-      addLog(
-        `Modelo ${configuration.mode}: ${configuration.url}`
-      );
-
-    } catch (error) {
-
-      console.log(
-        "Error cargando configuración:",
-        error
-      );
-
-    }
-
+    const configuration = await loadSettingsService();
+    setEsp32Ip(configuration.ip);
+    setAutoSend(configuration.autoSend);
+    setModelMode(configuration.mode);
+    setModelUrl(configuration.url);
+    addLog(`IP ESP32: ${configuration.ip || "no configurada"}`);
+    addLog(`Modelo ${configuration.mode}: ${configuration.url}`);
     return configuration;
-
   };
 
 
@@ -170,460 +112,32 @@ export default function App() {
     selectedUrl = modelUrl
   ) => {
 
+    setModelLoading(true);
+    setModelError("");
     try {
-
-      setModelLoading(true);
+      const loaded = await loadModelService(selectedMode, selectedUrl, addLog);
+      setModel(loaded.model);
+      setLabels(loaded.labels);
       setModelError("");
-
-      addLog("Iniciando TensorFlow.js...");
-
-      const fetchModelResource = (url, options) =>
-        fetch(url, options);
-
-      tf.env().setPlatform("react-native", {
-        fetch: fetchModelResource,
-        now: () => Date.now(),
-        encode: (text) => {
-          const encoded = unescape(encodeURIComponent(text));
-          return Uint8Array.from(encoded, (character) =>
-            character.charCodeAt(0)
-          );
-        },
-        decode: (bytes) => {
-          const encoded = Array.from(bytes, (byte) =>
-            `%${byte.toString(16).padStart(2, "0")}`
-          ).join("");
-          return decodeURIComponent(encoded);
-        },
-        isTypedArray: (value) =>
-          value instanceof Float32Array ||
-          value instanceof Int32Array ||
-          value instanceof Uint8Array ||
-          value instanceof Uint8ClampedArray,
-      });
-
-      // Usamos CPU porque no estamos utilizando
-      // @tensorflow/tfjs-react-native.
-      await tf.setBackend("cpu");
-      await tf.ready();
-
-      addLog(
-        `Backend TensorFlow: ${tf.getBackend()}`
-      );
-
-
-      let loadedModel;
-      let metadata;
-
-      if (selectedMode === "local") {
-        addLog("Cargando modelo local...");
-
-        const weightsAsset = Asset.fromModule(LOCAL_MODEL_WEIGHTS);
-        await weightsAsset.downloadAsync();
-
-        if (!weightsAsset.localUri) {
-          throw new Error("No se pudo localizar el archivo de pesos local.");
-        }
-
-        const encodedWeights = await FileSystem.readAsStringAsync(
-          weightsAsset.localUri,
-          { encoding: "base64" }
-        );
-        const weightBytes = toByteArray(encodedWeights);
-        const weightData = weightBytes.buffer.slice(
-          weightBytes.byteOffset,
-          weightBytes.byteOffset + weightBytes.byteLength
-        );
-
-        loadedModel = await tf.loadLayersModel(
-          tf.io.fromMemory({
-            modelTopology: localModelJson.modelTopology,
-            weightSpecs: localModelJson.weightsManifest.flatMap(
-              (group) => group.weights
-            ),
-            weightData,
-          })
-        );
-
-        metadata = localMetadata;
-      } else {
-        const baseUrl = selectedUrl.trim().replace(/\/+$/, "");
-        const modelJsonUrl = baseUrl.endsWith("/model.json")
-          ? baseUrl
-          : `${baseUrl}/model.json`;
-        const metadataUrl = baseUrl.endsWith("/model.json")
-          ? baseUrl.replace(/model\.json$/, "metadata.json")
-          : `${baseUrl}/metadata.json`;
-
-        addLog("Cargando modelo remoto...");
-
-        loadedModel = await tf.loadLayersModel(
-          tf.io.http(modelJsonUrl, {
-            fetchFunc: fetchModelResource,
-          })
-        );
-
-        const metadataResponse = await fetch(metadataUrl);
-
-        if (!metadataResponse.ok) {
-          throw new Error(
-            `No se pudo cargar metadata.json (${metadataResponse.status})`
-          );
-        }
-
-        metadata = await metadataResponse.json();
-      }
-
-
-      addLog("Modelo cargado correctamente.");
-
-
-      // --------------------------------------------------
-      // METADATA
-      // --------------------------------------------------
-
-      // Teachable Machine normalmente guarda:
-      // metadata.labels
-      //
-      // pero también dejamos soporte para:
-      // metadata.classes
-
-      const loadedLabels =
-        metadata.labels ||
-        metadata.classes ||
-        [];
-
-
-      if (!loadedLabels.length) {
-
-        throw new Error(
-          "No se encontraron las etiquetas del modelo en metadata.json"
-        );
-
-      }
-
-
-      setModel(loadedModel);
-      setLabels(loadedLabels);
-      setModelError("");
-
-
-      addLog(
-        `Clases encontradas: ${loadedLabels.join(", ")}`
-      );
-
-
-      // Mostrar forma de entrada
-      if (loadedModel.inputs?.[0]?.shape) {
-
-        addLog(
-          `Entrada del modelo: ${JSON.stringify(
-            loadedModel.inputs[0].shape
-          )}`
-        );
-
-      }
-
-
-      setModelLoading(false);
-
     } catch (error) {
-
       console.error(
         "Error cargando modelo:",
         error
       );
 
       setModelError(
-        error?.message ||
-        "No se pudo cargar el modelo."
+        error?.message || "No se pudo cargar el modelo."
       );
-
+      addLog(`ERROR: ${error?.message || "No se pudo cargar el modelo."}`);
+    } finally {
       setModelLoading(false);
-
-      addLog(
-        `ERROR MODELO: ${error?.message}`
-      );
-
     }
-
-  };
-
-
-  // ======================================================
-  // CONVERTIR FOTO A TENSOR
-  // ======================================================
-
-  const imageToTensor = (base64) => {
-
-    if (!base64) {
-
-      throw new Error(
-        "La foto no contiene base64."
-      );
-
-    }
-
-
-    // --------------------------------------------------
-    // Base64 -> bytes
-    // --------------------------------------------------
-
-    const imageBytes =
-      toByteArray(base64);
-
-
-    // --------------------------------------------------
-    // JPEG -> RGB
-    // --------------------------------------------------
-
-    const decoded =
-      jpeg.decode(imageBytes, {
-        useTArray: true,
-      });
-
-
-    const {
-      width,
-      height,
-      data,
-    } = decoded;
-
-
-    if (!width || !height || !data) {
-
-      throw new Error(
-        "No se pudo decodificar la imagen JPEG."
-      );
-
-    }
-
-
-    // --------------------------------------------------
-    // Tamaño esperado por Teachable Machine
-    // --------------------------------------------------
-
-    const size = 224;
-
-
-    // --------------------------------------------------
-    // Crop cuadrado centrado
-    // --------------------------------------------------
-
-    const cropSize =
-      Math.min(width, height);
-
-    const offsetX =
-      Math.floor((width - cropSize) / 2);
-
-    const offsetY =
-      Math.floor((height - cropSize) / 2);
-
-
-    const rgb = new Float32Array(
-      size * size * 3
-    );
-
-
-    // --------------------------------------------------
-    // Resize + normalización
-    //
-    // Teachable Machine normalmente utiliza:
-    // pixel / 127.5 - 1
-    // --------------------------------------------------
-
-    let index = 0;
-
-
-    for (let y = 0; y < size; y++) {
-
-      const sourceY =
-        Math.min(
-          cropSize - 1,
-          Math.floor(
-            (y / size) * cropSize
-          )
-        );
-
-
-      for (let x = 0; x < size; x++) {
-
-        const sourceX =
-          Math.min(
-            cropSize - 1,
-            Math.floor(
-              (x / size) * cropSize
-            )
-          );
-
-
-        const pixelIndex =
-          (
-            (sourceY + offsetY) * width +
-            (sourceX + offsetX)
-          ) * 4;
-
-
-        const r =
-          data[pixelIndex];
-
-        const g =
-          data[pixelIndex + 1];
-
-        const b =
-          data[pixelIndex + 2];
-
-
-        rgb[index++] =
-          r / 127.5 - 1;
-
-        rgb[index++] =
-          g / 127.5 - 1;
-
-        rgb[index++] =
-          b / 127.5 - 1;
-
-      }
-
-    }
-
-
-    // --------------------------------------------------
-    // Tensor [1, 224, 224, 3]
-    // --------------------------------------------------
-
-    return tf.tensor4d(
-      rgb,
-      [1, size, size, 3]
-    );
-
   };
 
 
   // ======================================================
   // PREDICCIÓN
   // ======================================================
-
-  const predictImage = async (photo) => {
-
-    if (!model) {
-
-      throw new Error(
-        "El modelo todavía no está cargado."
-      );
-
-    }
-
-
-    if (!photo?.base64) {
-
-      throw new Error(
-        "La cámara no devolvió la imagen en base64."
-      );
-
-    }
-
-
-    addLog("Preparando imagen...");
-
-
-    const inputTensor =
-      imageToTensor(photo.base64);
-
-
-    try {
-
-      addLog("Ejecutando predicción...");
-
-
-      const prediction =
-        model.predict(inputTensor);
-
-
-      // Algunos modelos devuelven Tensor,
-      // otros pueden devolver un array.
-
-      const outputTensor =
-        Array.isArray(prediction)
-          ? prediction[0]
-          : prediction;
-
-
-      const probabilities =
-        await outputTensor.data();
-
-
-      let bestIndex = 0;
-      let bestProbability = probabilities[0];
-
-
-      for (
-        let i = 1;
-        i < probabilities.length;
-        i++
-      ) {
-
-        if (
-          probabilities[i] >
-          bestProbability
-        ) {
-
-          bestProbability =
-            probabilities[i];
-
-          bestIndex = i;
-
-        }
-
-      }
-
-
-      const className =
-        labels[bestIndex] ||
-        `Clase ${bestIndex}`;
-
-
-      const percentage =
-        bestProbability * 100;
-
-
-      addLog(
-        `Predicción: ${className} (${percentage.toFixed(2)}%)`
-      );
-
-
-      setDetectedClass(className);
-      setConfidence(percentage);
-
-
-      // Liberar tensores
-      inputTensor.dispose();
-
-      if (
-        outputTensor &&
-        typeof outputTensor.dispose === "function"
-      ) {
-
-        outputTensor.dispose();
-
-      }
-
-
-      return {
-        className,
-        confidence: percentage,
-      };
-
-    } catch (error) {
-
-      inputTensor.dispose();
-
-      throw error;
-
-    }
-
-  };
-
 
   // ======================================================
   // CAPTURAR + ANALIZAR
@@ -660,7 +174,10 @@ export default function App() {
 
 
         const result =
-          await predictImage(photo);
+          await predictImage(model, labels, photo, addLog);
+
+        setDetectedClass(result.className);
+        setConfidence(result.confidence);
 
 
         // ------------------------------------------------
@@ -740,51 +257,23 @@ export default function App() {
       }
 
 
+      let sendStartedAt = null;
       try {
 
-        const safeClass =
-          encodeURIComponent(
-            className
-          );
-
-
-        const numericPercentage =
-          Number(porcentaje);
-
-
-        const url =
-          `http://${esp32Ip}/enviar` +
-          `?clase=${safeClass}` +
-          `&porcentaje=${numericPercentage.toFixed(2)}`;
-
-
+        const numericPercentage = Number(porcentaje);
         addLog(
           `Enviando al ESP32: ${className} / ${numericPercentage.toFixed(2)}%`
         );
 
-
-        const response =
-          await fetch(url, {
-            method: "GET",
-          });
-
-
-        const text =
-          await response.text();
-
-
-        if (!response.ok) {
-
-          throw new Error(
-            `ESP32 respondió ${response.status}: ${text}`
-          );
-
-        }
-
-
-        addLog(
-          `ESP32 respondió: ${text}`
+        sendStartedAt = Date.now();
+        const response = await sendESP32Request(
+          esp32Ip,
+          className,
+          numericPercentage
         );
+
+        addLog(`Tiempo de respuesta del ESP32: ${Date.now() - sendStartedAt} ms`);
+        addLog(`ESP32 respondió: ${response.text}`);
 
 
         Alert.alert(
@@ -799,6 +288,10 @@ export default function App() {
           "Error ESP32:",
           error
         );
+
+        if (sendStartedAt !== null) {
+          addLog(`Tiempo hasta error del ESP32: ${Date.now() - sendStartedAt} ms`);
+        }
 
 
         addLog(
@@ -815,6 +308,25 @@ export default function App() {
       }
 
     };
+
+  const pingESP32 = async () => {
+    if (!esp32Ip) {
+      Alert.alert("ESP32", "Primero configura la IP del ESP32.");
+      return;
+    }
+
+    try {
+      const response = await checkESP32(esp32Ip);
+      addLog(`ESP32 disponible: ${response}`);
+      Alert.alert("ESP32", "Conexión correcta.");
+    } catch (error) {
+      addLog(`ERROR ESP32: ${error?.message}`);
+      Alert.alert(
+        "Error ESP32",
+        error?.message || "No se pudo conectar con el ESP32."
+      );
+    }
+  };
 
 
   // ======================================================
@@ -834,27 +346,12 @@ export default function App() {
         return;
       }
 
-      await AsyncStorage.setItem(
-        ESP32_IP_KEY,
-        newIp || ""
-      );
-
-
-      await AsyncStorage.setItem(
-        MODEL_URL_KEY,
-        newModelUrl.trim()
-      );
-
-      await AsyncStorage.setItem(
-        MODEL_MODE_KEY,
-        newModelMode
-      );
-
-
-      await AsyncStorage.setItem(
-        AUTO_SEND_KEY,
-        String(!!newAutoSend)
-      );
+      await saveSettingsService({
+        ip: newIp,
+        autoSend: newAutoSend,
+        mode: newModelMode,
+        url: newModelUrl,
+      });
 
 
       setEsp32Ip(newIp || "");
@@ -973,6 +470,10 @@ export default function App() {
                 logs
               }
 
+              onAddLog={
+                addLog
+              }
+
               onClearLogs={
                 clearLogs
               }
@@ -1061,6 +562,10 @@ export default function App() {
 
               onSaveSettings={
                 saveSettings
+              }
+
+              pingESP32={
+                pingESP32
               }
 
             />
