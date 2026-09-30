@@ -19,6 +19,7 @@ import {
   CameraView,
   useCameraPermissions,
 } from 'expo-camera';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 
 import LogsModal from '../components/LogsModal';
 
@@ -29,6 +30,7 @@ export default function CameraScreen({
   confidence,
   logs,
   onClearLogs,
+  onAddLog,
   onCaptureAndSend,
   onSendToESP32,
 }) {
@@ -71,13 +73,36 @@ export default function CameraScreen({
     }
 
     try {
+      const captureStartedAt = Date.now();
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.8,
-        base64: true,
+        base64: false,
         skipProcessing: false,
       });
 
+      onAddLog?.(`Captura de foto: ${Date.now() - captureStartedAt} ms`);
       console.log('Foto capturada correctamente');
+
+      const resizeStartedAt = Date.now();
+      const cropSize = Math.min(photo.width, photo.height);
+      const resizedImage = await ImageManipulator.manipulate(photo.uri)
+        .crop({
+          originX: Math.floor((photo.width - cropSize) / 2),
+          originY: Math.floor((photo.height - cropSize) / 2),
+          width: cropSize,
+          height: cropSize,
+        })
+        .resize({ width: 224, height: 224 })
+        .renderAsync();
+      const optimizedPhoto = await resizedImage.saveAsync({
+        compress: 0.8,
+        format: SaveFormat.JPEG,
+        base64: true,
+      });
+
+      onAddLog?.(
+        `Reducción nativa (${photo.width}x${photo.height} -> ${optimizedPhoto.width}x${optimizedPhoto.height}): ${Date.now() - resizeStartedAt} ms`
+      );
 
       /*
        * Aquí enviamos la foto al componente padre.
@@ -91,10 +116,11 @@ export default function CameraScreen({
        * }
        */
       if (onCaptureAndSend) {
-        await onCaptureAndSend(photo);
+        await onCaptureAndSend(optimizedPhoto);
       }
     } catch (error) {
       console.error('Error capturando la imagen:', error);
+      onAddLog?.(`ERROR preparando la foto: ${error?.message || error}`);
     }
   };
 
