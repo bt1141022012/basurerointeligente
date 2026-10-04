@@ -8,9 +8,10 @@ import {
   ScrollView,
   Switch,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Wifi, Sliders, Download, HardDrive } from 'lucide-react-native';
+import { Wifi, Sliders, Download, HardDrive, Trash2 } from 'lucide-react-native';
 
 export default function SettingsScreen({
   esp32Ip,
@@ -27,9 +28,25 @@ export default function SettingsScreen({
   modelError,
   onDownloadModel,
   onLoadDownloadedModel,
+  onDeleteDownloadedModel,
   pingESP32,
   onSaveSettings,
 }) {
+  const confirmDeleteModel = () => {
+    Alert.alert(
+      'Eliminar modelo descargado',
+      'Se borrará la copia guardada en este teléfono. Para usarla sin conexión tendrás que descargarla nuevamente.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: onDeleteDownloadedModel,
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -159,6 +176,18 @@ export default function SettingsScreen({
                 </Text>
               </TouchableOpacity>
             )}
+
+            {downloadedModelInfo ? (
+              <TouchableOpacity
+                accessibilityRole="button"
+                disabled={isModelLoading}
+                style={[styles.deleteModelButton, isModelLoading && styles.buttonDisabled]}
+                onPress={confirmDeleteModel}
+              >
+                <Trash2 color="#fecdd3" size={18} />
+                <Text style={styles.deleteModelButtonText}>Eliminar modelo descargado</Text>
+              </TouchableOpacity>
+            ) : null}
 
             {modelError ? <Text style={styles.modelError}>{modelError}</Text> : null}
           </View>
@@ -327,6 +356,23 @@ const styles = StyleSheet.create({
   },
   offlineButtonText: {
     color: '#d1fae5',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  deleteModelButton: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#9f1239',
+    backgroundColor: '#4c0519',
+    paddingHorizontal: 10,
+  },
+  deleteModelButtonText: {
+    color: '#fecdd3',
     fontSize: 13,
     fontWeight: '600',
   },

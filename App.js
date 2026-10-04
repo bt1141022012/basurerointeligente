@@ -19,6 +19,7 @@ import {
   sendToESP32 as sendESP32Request,
 } from "./services/esp32Service";
 import {
+  deleteDownloadedModel as deleteDownloadedModelService,
   downloadModel as downloadModelService,
   getDownloadedModelInfo,
   loadDownloadedModel,
@@ -162,6 +163,31 @@ export default function App() {
 
   const loadSavedModel = () =>
     runModelAction(() => loadDownloadedModel(addLog));
+
+  const removeDownloadedModel = async () => {
+    setModelLoading(true);
+    setModelError("");
+    try {
+      await deleteDownloadedModelService();
+      model?.dispose();
+      setModel(null);
+      setLabels([]);
+      setDownloadedModelInfo(null);
+      setDetectedClass("");
+      setConfidence(0);
+      addLog("Modelo descargado eliminado del dispositivo.");
+      Alert.alert("Modelo", "El modelo descargado se eliminó del dispositivo.");
+    } catch (error) {
+      console.error("Error eliminando el modelo descargado:", error);
+      const message =
+        error?.message || "No se pudo eliminar el modelo descargado.";
+      setModelError(message);
+      addLog(`ERROR: ${message}`);
+      Alert.alert("Error", message);
+    } finally {
+      setModelLoading(false);
+    }
+  };
 
 
   // ======================================================
@@ -598,6 +624,10 @@ export default function App() {
 
               onLoadDownloadedModel={
                 loadSavedModel
+              }
+
+              onDeleteDownloadedModel={
+                removeDownloadedModel
               }
 
               setLogsEnabled={
