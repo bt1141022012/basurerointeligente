@@ -16,14 +16,27 @@
       "supportsTablet": true
     },
     "android": {
+      "permissions": [
+        "android.permission.INTERNET"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.marvinbt2025.snackaa66154b64b3479ea33bc3d731dbbc31"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "./plugins/withEsp32Http"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "58dfe109-d1a6-47d4-8716-fc7f9e189a9c"
+      }
+    },
+    "owner": "marvinbt2025"
   }
 }

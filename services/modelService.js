@@ -1,15 +1,9 @@
-import { Asset } from "expo-asset";
-import * as FileSystem from "expo-file-system/legacy";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as tf from "@tensorflow/tfjs";
 import { asyncStorageIO } from "@tensorflow/tfjs-react-native";
 import jpeg from "jpeg-js";
 import { toByteArray } from "base64-js";
 
-import localModelJson from "../assets/model/model.json";
-import localMetadata from "../assets/model/metadata.json";
-
-const LOCAL_MODEL_WEIGHTS = require("../assets/model/model.weights.bin");
 const OFFLINE_MODEL_PATH = "basurero-inteligente-offline";
 const OFFLINE_MODEL_INFO_KEY = "BASURERO_OFFLINE_MODEL_INFO";
 
@@ -33,67 +27,30 @@ async function initializeTensorFlow(addLog) {
   return tensorflow;
 }
 
-export async function loadModel(selectedMode, selectedUrl, addLog) {
+async function loadRemoteModel(selectedUrl, addLog) {
   const tensorflow = await initializeTensorFlow(addLog);
+  const baseUrl = selectedUrl.trim().replace(/\/+$/, "");
+  const modelJsonUrl = baseUrl.endsWith("/model.json")
+    ? baseUrl
+    : `${baseUrl}/model.json`;
+  const metadataUrl = baseUrl.endsWith("/model.json")
+    ? baseUrl.replace(/model\.json$/, "metadata.json")
+    : `${baseUrl}/metadata.json`;
 
-  let loadedModel;
-  let metadata;
+  addLog("Descargando modelo remoto...");
+  const loadedModel = await tensorflow.loadLayersModel(
+    tensorflow.io.http(modelJsonUrl, {
+      fetchFunc: (url, options) => fetch(url, options),
+    })
+  );
 
-  if (selectedMode === "local") {
-    addLog("Cargando modelo local...");
-
-    const weightsAsset = Asset.fromModule(LOCAL_MODEL_WEIGHTS);
-    await weightsAsset.downloadAsync();
-
-    if (!weightsAsset.localUri) {
-      throw new Error("No se pudo localizar el archivo de pesos local.");
-    }
-
-    const encodedWeights = await FileSystem.readAsStringAsync(
-      weightsAsset.localUri,
-      { encoding: "base64" }
+  const metadataResponse = await fetch(metadataUrl);
+  if (!metadataResponse.ok) {
+    throw new Error(
+      `No se pudo cargar metadata.json (${metadataResponse.status})`
     );
-    const weightBytes = toByteArray(encodedWeights);
-    const weightData = weightBytes.buffer.slice(
-      weightBytes.byteOffset,
-      weightBytes.byteOffset + weightBytes.byteLength
-    );
-
-    loadedModel = await tensorflow.loadLayersModel(
-      tensorflow.io.fromMemory({
-        modelTopology: localModelJson.modelTopology,
-        weightSpecs: localModelJson.weightsManifest.flatMap(
-          (group) => group.weights
-        ),
-        weightData,
-      })
-    );
-    metadata = localMetadata;
-  } else {
-    const baseUrl = selectedUrl.trim().replace(/\/+$/, "");
-    const modelJsonUrl = baseUrl.endsWith("/model.json")
-      ? baseUrl
-      : `${baseUrl}/model.json`;
-    const metadataUrl = baseUrl.endsWith("/model.json")
-      ? baseUrl.replace(/model\.json$/, "metadata.json")
-      : `${baseUrl}/metadata.json`;
-
-    addLog("Cargando modelo remoto...");
-    loadedModel = await tensorflow.loadLayersModel(
-      tensorflow.io.http(modelJsonUrl, {
-        fetchFunc: (url, options) => fetch(url, options),
-      })
-    );
-
-    const metadataResponse = await fetch(metadataUrl);
-    if (!metadataResponse.ok) {
-      throw new Error(
-        `No se pudo cargar metadata.json (${metadataResponse.status})`
-      );
-    }
-
-    metadata = await metadataResponse.json();
   }
+  const metadata = await metadataResponse.json();
 
   const labels = metadata.labels || metadata.classes || [];
   if (!labels.length) {
@@ -111,7 +68,7 @@ export async function loadModel(selectedMode, selectedUrl, addLog) {
 }
 
 export async function downloadModel(selectedUrl, addLog) {
-  const loaded = await loadModel("remote", selectedUrl, addLog);
+  const loaded = await loadRemoteModel(selectedUrl, addLog);
   addLog("Guardando modelo para uso sin conexión...");
   await loaded.model.save(asyncStorageIO(OFFLINE_MODEL_PATH));
 

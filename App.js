@@ -22,7 +22,6 @@ import {
   downloadModel as downloadModelService,
   getDownloadedModelInfo,
   loadDownloadedModel,
-  loadModel as loadModelService,
   predictImage,
 } from "./services/modelService";
 import {
@@ -54,7 +53,6 @@ export default function App() {
   const [downloadedModelInfo, setDownloadedModelInfo] = useState(null);
 
   const [esp32Ip, setEsp32Ip] = useState("");
-  const [modelMode, setModelMode] = useState("remote");
   const [modelUrl, setModelUrl] = useState(DEFAULT_MODEL_URL);
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -98,7 +96,12 @@ export default function App() {
   useEffect(() => {
     const initialize = async () => {
       await loadSettings();
-      setDownloadedModelInfo(await getDownloadedModelInfo());
+      const savedModelInfo = await getDownloadedModelInfo();
+      setDownloadedModelInfo(savedModelInfo);
+
+      if (savedModelInfo?.labels?.length) {
+        await loadSavedModel();
+      }
     };
 
     initialize();
@@ -111,10 +114,9 @@ export default function App() {
     setLogsEnabled(configuration.logsEnabled);
     setEsp32Ip(configuration.ip);
     setAutoSend(configuration.autoSend);
-    setModelMode(configuration.mode);
     setModelUrl(configuration.url);
     addLog(`IP ESP32: ${configuration.ip || "no configurada"}`);
-    addLog(`Modelo ${configuration.mode}: ${configuration.url}`);
+    addLog(`URL del modelo: ${configuration.url}`);
     return configuration;
   };
 
@@ -155,13 +157,8 @@ export default function App() {
     }
   };
 
-  const downloadConfiguredModel = () => {
-    if (modelMode === "local") {
-      return runModelAction(() => loadModelService("local", modelUrl, addLog));
-    }
-
-    return runModelAction(() => downloadModelService(modelUrl, addLog));
-  };
+  const downloadConfiguredModel = () =>
+    runModelAction(() => downloadModelService(modelUrl, addLog));
 
   const loadSavedModel = () =>
     runModelAction(() => loadDownloadedModel(addLog));
@@ -368,25 +365,22 @@ export default function App() {
   const saveSettings = async (
     newIp,
     newAutoSend,
-    newModelMode,
     newModelUrl,
     newLogsEnabled
   ) => {
 
     try {
-      if (newModelMode === "remote" && !newModelUrl.trim()) {
-        Alert.alert("Modelo remoto", "Ingresa la URL base del modelo.");
+      if (!newModelUrl.trim()) {
+        Alert.alert("Modelo", "Ingresa la URL base del modelo.");
         return;
       }
 
-      const modelConfigurationChanged =
-        newModelMode !== modelMode || newModelUrl.trim() !== modelUrl.trim();
+      const modelConfigurationChanged = newModelUrl.trim() !== modelUrl.trim();
 
       await saveSettingsService({
         ip: newIp,
         autoSend: newAutoSend,
         logsEnabled: newLogsEnabled,
-        mode: newModelMode,
         url: newModelUrl,
       });
 
@@ -395,7 +389,6 @@ export default function App() {
       setAutoSend(!!newAutoSend);
       logsEnabledRef.current = !!newLogsEnabled;
       setLogsEnabled(!!newLogsEnabled);
-      setModelMode(newModelMode);
       setModelUrl(newModelUrl.trim());
       if (modelConfigurationChanged) {
         setModel(null);
@@ -621,14 +614,6 @@ export default function App() {
 
               setModelUrl={
                 setModelUrl
-              }
-
-              modelMode={
-                modelMode
-              }
-
-              setModelMode={
-                setModelMode
               }
 
               onSaveSettings={

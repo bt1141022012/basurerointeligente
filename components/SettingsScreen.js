@@ -10,15 +10,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Wifi, Sliders, Download, HardDrive, CheckCircle2 } from 'lucide-react-native';
+import { Wifi, Sliders, Download, HardDrive } from 'lucide-react-native';
 
 export default function SettingsScreen({
   esp32Ip,
   setEsp32Ip,
   modelUrl,
   setModelUrl,
-  modelMode,
-  setModelMode,
   autoSend,
   setAutoSend,
   logsEnabled,
@@ -61,52 +59,17 @@ export default function SettingsScreen({
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Origen del modelo:</Text>
-            <View style={styles.modeSelector}>
-              {[
-                { value: 'remote', label: 'Remoto' },
-                { value: 'local', label: 'Local' },
-              ].map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: modelMode === option.value }}
-                  style={[
-                    styles.modeOption,
-                    modelMode === option.value && styles.modeOptionSelected,
-                  ]}
-                  onPress={() => setModelMode(option.value)}
-                >
-                  <Text
-                    style={[
-                      styles.modeOptionText,
-                      modelMode === option.value && styles.modeOptionTextSelected,
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {modelMode === 'remote' ? (
-              <>
-                <Text style={styles.inputLabel}>URL base del modelo:</Text>
-                <TextInput
-                  value={modelUrl}
-                  onChangeText={setModelUrl}
-                  placeholder="https://teachablemachine.withgoogle.com/models/.../"
-                  placeholderTextColor="#64748b"
-                  style={styles.textInput}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="url"
-                />
-              </>
-            ) : (
-              <Text style={styles.toggleSubtitle}>
-                Usa el modelo incluido en la aplicación y no requiere internet.
-              </Text>
-            )}
+            <Text style={styles.inputLabel}>URL base del modelo:</Text>
+            <TextInput
+              value={modelUrl}
+              onChangeText={setModelUrl}
+              placeholder="https://teachablemachine.withgoogle.com/models/.../"
+              placeholderTextColor="#64748b"
+              style={styles.textInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+            />
           </View>
 
           <View style={styles.toggleRow}>
@@ -149,10 +112,8 @@ export default function SettingsScreen({
               {modelReady
                 ? 'Modelo cargado y listo para esta sesión.'
                 : downloadedModelInfo
-                ? 'Hay una copia guardada en el dispositivo para usar sin internet.'
-                : modelMode === 'local'
-                ? 'El modelo está incluido en la aplicación; cárgalo cuando lo necesites.'
-                : 'El modelo no está descargado. Necesitarás internet para descargarlo.'}
+                ? 'Hay una copia guardada en el teléfono; se carga al abrir la aplicación.'
+                : 'El modelo no está descargado. Puedes descargarlo cuando quieras; se guardará en el teléfono.'}
             </Text>
 
             {downloadedModelInfo?.sourceUrl ? (
@@ -161,45 +122,25 @@ export default function SettingsScreen({
               </Text>
             ) : null}
 
-            {modelMode === 'remote' && (
-              <TouchableOpacity
-                accessibilityRole="button"
-                disabled={isModelLoading}
-                style={[styles.modelButton, isModelLoading && styles.buttonDisabled]}
-                onPress={onDownloadModel}
-              >
-                {isModelLoading ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <Download color="#ffffff" size={18} />
-                )}
-                <Text style={styles.saveButtonText}>
-                  {isModelLoading
-                    ? 'Descargando y guardando...'
-                    : downloadedModelInfo
-                    ? 'Descargar / actualizar modelo'
-                    : 'Descargar para usar sin internet'}
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {modelMode === 'local' && (
-              <TouchableOpacity
-                accessibilityRole="button"
-                disabled={isModelLoading}
-                style={[styles.modelButton, isModelLoading && styles.buttonDisabled]}
-                onPress={onDownloadModel}
-              >
-                {isModelLoading ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <CheckCircle2 color="#ffffff" size={18} />
-                )}
-                <Text style={styles.saveButtonText}>
-                  {isModelLoading ? 'Cargando modelo...' : 'Cargar modelo local'}
-                </Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              accessibilityRole="button"
+              disabled={isModelLoading}
+              style={[styles.modelButton, isModelLoading && styles.buttonDisabled]}
+              onPress={onDownloadModel}
+            >
+              {isModelLoading ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <Download color="#ffffff" size={18} />
+              )}
+              <Text style={styles.saveButtonText}>
+                {isModelLoading
+                  ? 'Descargando y guardando...'
+                  : downloadedModelInfo
+                  ? 'Descargar / actualizar modelo'
+                  : 'Descargar para usar sin conexión'}
+              </Text>
+            </TouchableOpacity>
 
             {downloadedModelInfo && !modelReady && (
               <TouchableOpacity
@@ -225,7 +166,7 @@ export default function SettingsScreen({
           <TouchableOpacity
             style={styles.saveButton}
             onPress={() =>
-              onSaveSettings(esp32Ip, autoSend, modelMode, modelUrl, logsEnabled)
+              onSaveSettings(esp32Ip, autoSend, modelUrl, logsEnabled)
             }
           >
             <Text style={styles.saveButtonText}>Guardar configuración</Text>
