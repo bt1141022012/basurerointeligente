@@ -1,8 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system/legacy";
 import * as tf from "@tensorflow/tfjs";
-import { asyncStorageIO } from "@tensorflow/tfjs-react-native";
-import { fromByteArray, toByteArray } from "base64-js";
+import "@tensorflow/tfjs-react-native";
+ import { fromByteArray, toByteArray } from "base64-js";
 import jpeg from "jpeg-js";
 
 const OFFLINE_MODEL_PATH = "basurero-inteligente-offline";
@@ -188,11 +188,19 @@ export async function loadDownloadedModel(addLog) {
   addLog("Cargando modelo guardado en el dispositivo...");
   const files = getOfflineModelFiles();
   const modelFile = await FileSystem.getInfoAsync(files.model);
-  const loadedModel = await tensorflow.loadLayersModel(
-    modelFile.exists
-      ? createFileSystemModelIO()
-      : asyncStorageIO(OFFLINE_MODEL_PATH)
-  );
+  if (!modelFile.exists) {
+    await AsyncStorage.multiRemove([
+      OFFLINE_MODEL_INFO_KEY,
+      `tensorflowjs_models/${OFFLINE_MODEL_PATH}/info`,
+      `tensorflowjs_models/${OFFLINE_MODEL_PATH}/model_without_weight`,
+      `tensorflowjs_models/${OFFLINE_MODEL_PATH}/weight_data`,
+    ]);
+    throw new Error(
+      "La copia guardada con la versión anterior no se puede cargar. Descarga el modelo nuevamente para guardarlo como archivo en el teléfono."
+    );
+  }
+
+  const loadedModel = await tensorflow.loadLayersModel(createFileSystemModelIO());
 
   if (loadedModel.inputs?.[0]?.shape) {
     addLog(`Entrada del modelo: ${JSON.stringify(loadedModel.inputs[0].shape)}`);

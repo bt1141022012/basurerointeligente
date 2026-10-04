@@ -161,8 +161,13 @@ export default function App() {
   const downloadConfiguredModel = () =>
     runModelAction(() => downloadModelService(modelUrl, addLog));
 
-  const loadSavedModel = () =>
-    runModelAction(() => loadDownloadedModel(addLog));
+  const loadSavedModel = async () => {
+    const loaded = await runModelAction(() => loadDownloadedModel(addLog));
+    if (!loaded) {
+      setDownloadedModelInfo(await getDownloadedModelInfo());
+    }
+    return loaded;
+  };
 
   const removeDownloadedModel = async () => {
     setModelLoading(true);
