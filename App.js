@@ -14,6 +14,7 @@ import HomeScreen from "./components/HomeScreen";
 import CameraScreen from "./components/CameraScreen";
 import SettingsScreen from "./components/SettingsScreen";
 import TestESP32Screen from "./components/TestESP32Screen";
+import ESP32ViewerScreen from "./components/ESP32ViewerScreen";
 import {
   checkESP32,
   sendToESP32 as sendESP32Request,
@@ -576,6 +577,15 @@ export default function App() {
               }
             />
           )}
+        </Stack.Screen>
+
+        <Stack.Screen
+          name="ESP32Viewer"
+          options={{
+            title: "Sitio del ESP32",
+          }}
+        >
+          {(props) => <ESP32ViewerScreen {...props} esp32Ip={esp32Ip} />}
         </Stack.Screen>
 
 

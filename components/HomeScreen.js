@@ -1,13 +1,13 @@
 import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, StatusBar } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, StatusBar, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Camera, Send, Sliders, Cpu } from 'lucide-react-native';
+import { Camera, Send, Sliders, Cpu, Globe } from 'lucide-react-native';
 
 export default function HomeScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.content}>
         
         <View style={styles.header}>
           <View style={styles.iconBadge}>
@@ -53,6 +53,22 @@ export default function HomeScreen({ navigation }) {
           <TouchableOpacity
             style={styles.menuCard}
             activeOpacity={0.8}
+            onPress={() => navigation.navigate('ESP32Viewer')}
+          >
+            <View style={[styles.cardIcon, { backgroundColor: 'rgba(56, 189, 248, 0.2)' }]}>
+              <Globe color="#38bdf8" size={30} />
+            </View>
+            <View style={styles.cardTextContainer}>
+              <Text style={styles.cardTitle}>Sitio del ESP32</Text>
+              <Text style={styles.cardDescription}>
+                Abre el sitio web servido por el ESP32 usando su dirección IP
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuCard}
+            activeOpacity={0.8}
             onPress={() => navigation.navigate('Settings')}
           >
             <View style={[styles.cardIcon, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
@@ -67,7 +83,7 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -78,7 +94,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     padding: 24,
     justifyContent: 'center',
     gap: 40,
